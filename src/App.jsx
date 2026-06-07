@@ -832,17 +832,7 @@ function App() {
           title="Hubungi WhatsApp Admin"
         />
 
-        {/* --- SETTINGS/ADMIN ROUTE REDIRECT BUTTON --- */}
-        {/* Small transparent gear button at the top corner to open admin path */}
-        <div className="absolute top-[2%] right-[3%] z-30">
-          <button
-            onClick={() => navigateTo('/admin')}
-            className="p-1.5 bg-black/40 text-slate-400 hover:text-[#00f0ff] hover:bg-black/60 rounded-full border border-slate-700/35 transition-all cursor-pointer focus:outline-none"
-            title="Go to Admin Panel"
-          >
-            <Settings size={14} />
-          </button>
-        </div>
+
 
       </div>
 
