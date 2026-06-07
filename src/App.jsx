@@ -852,7 +852,7 @@ function App() {
 
         {/* --- WHATSAPP CALL-TO-ACTION BUTTON --- */}
         {/* Aligned with "Catatan:" text: top=65%, left=5%, width=50% */}
-        <div className="absolute top-[67%] left-[3%] w-[40%] z-20">
+        <div className="absolute top-[67%] left-[3%] w-[50%] z-20">
           <button
             onClick={handleWhatsAppClick}
             className="w-full py-1 flex items-center justify-center gap-1.5 rounded-lg cursor-pointer focus:outline-none transition-all duration-200 hover:scale-102 active:scale-98"
