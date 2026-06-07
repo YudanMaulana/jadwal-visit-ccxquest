@@ -143,7 +143,13 @@ function App() {
   // Handle WhatsApp Link Click
   const handleWhatsAppClick = () => {
     const formattedDate = formatDateIndonesian(selectedDate);
-    const text = `Halo Admin, saya ingin melakukan reservasi kunjungan Chocolatos X-Quest untuk tanggal *${formattedDate}*. Mohon info slot yang tersedia. Terima kasih!`;
+    const text =
+`Kirimkan pesan berikut untuk reservasi:
+
+Nama PIC/Penanggungjawab: 
+Tanggal Kunjungan: ${formattedDate}
+Batch: 
+Jumlah Visitor: `;
     const encodedText = encodeURIComponent(text);
     const url = `https://wa.me/${APP_SETTINGS.whatsappNumber}?text=${encodedText}`;
     window.open(url, '_blank');
