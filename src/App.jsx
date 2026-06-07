@@ -797,7 +797,7 @@ Jumlah Visitor: `;
                 <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
                   Batch
                 </div>
-                <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
+                <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
                   Jam kunjungan
                 </div>
                 <div className="w-[40%] flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
@@ -835,7 +835,7 @@ Jumlah Visitor: `;
                       <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-white bg-[#0c1f3d]">
                         {batch.batch}
                       </div>
-                      <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-[#8db3e2] font-orbitron bg-[#0c1f3d]">
+                      <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-white bg-[#0c1f3d]">
                         {batch.time}
                       </div>
                       <div className={`w-[40%] flex flex-col items-center justify-center p-1 text-center ${statusBgClass}`}>
