@@ -104,6 +104,15 @@ function App() {
   };
 
   // Fetch schedule on date change
+  // Default 5-batch template for admin when no Firestore data exists for a date
+  const getDefaultAdminBatches = () => [
+    { id: 1, batch: 'Batch 1', time: '08:45', status: 'tersedia', quota: null },
+    { id: 2, batch: 'Batch 2', time: '09:45', status: 'tersedia', quota: null },
+    { id: 3, batch: 'Batch 3', time: '12:45', status: 'tersedia', quota: null },
+    { id: 4, batch: 'Batch 4', time: '13:45', status: 'tersedia', quota: null },
+    { id: 5, batch: 'Batch 5', time: '14:45', status: 'tersedia', quota: null },
+  ];
+
   const fetchSchedule = async (dateStr) => {
     setIsLoading(true);
     setErrorMsg('');
@@ -118,8 +127,11 @@ function App() {
       
       setBatches(formattedBatches);
       
-      // Seed admin state in case they open the editor
-      setAdminBatches(JSON.parse(JSON.stringify(formattedBatches)));
+      // Seed admin state: use fetched data if exists, else use default 5-batch template
+      const adminSeed = formattedBatches.length > 0
+        ? JSON.parse(JSON.stringify(formattedBatches))
+        : getDefaultAdminBatches();
+      setAdminBatches(adminSeed);
     } catch (err) {
       console.error(err);
       setErrorMsg('Gagal memuat jadwal kunjungan.');
