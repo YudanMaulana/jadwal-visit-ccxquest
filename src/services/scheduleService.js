@@ -11,11 +11,11 @@ import { APP_SETTINGS } from "../config/settings";
  * @returns {Promise<{batches: Array, whatsappNumber: string, whatsappDisplay: string}>}
  */
 export async function getScheduleByDate(dateString) {
-  // If Firestore is not configured, return default data directly
+  // If Firestore is not configured, return empty (no schedule set)
   if (!isFirebaseConfigured || !db) {
-    console.log(`[Demo Mode] Fetching default schedule for: ${dateString}`);
+    console.log(`[Demo Mode] Firebase not configured, no schedule for: ${dateString}`);
     return {
-      batches: APP_SETTINGS.defaultSchedules,
+      batches: [],
       whatsappNumber: APP_SETTINGS.whatsappNumber,
       whatsappDisplay: APP_SETTINGS.whatsappDisplay
     };
@@ -30,14 +30,15 @@ export async function getScheduleByDate(dateString) {
       console.log(`[Firestore] Loaded schedule for: ${dateString}`, data);
       
       return {
-        batches: data.batches || APP_SETTINGS.defaultSchedules,
+        batches: data.batches || [],
         whatsappNumber: data.whatsappNumber || APP_SETTINGS.whatsappNumber,
         whatsappDisplay: data.whatsappDisplay || APP_SETTINGS.whatsappDisplay
       };
     } else {
-      console.log(`[Firestore] No schedule found for: ${dateString}. Using defaults.`);
+      // No document → admin hasn't set up this date yet
+      console.log(`[Firestore] No schedule found for: ${dateString}. Showing empty.`);
       return {
-        batches: APP_SETTINGS.defaultSchedules,
+        batches: [],
         whatsappNumber: APP_SETTINGS.whatsappNumber,
         whatsappDisplay: APP_SETTINGS.whatsappDisplay
       };
@@ -45,7 +46,7 @@ export async function getScheduleByDate(dateString) {
   } catch (error) {
     console.error(`Error fetching schedule for ${dateString} from Firestore:`, error);
     return {
-      batches: APP_SETTINGS.defaultSchedules,
+      batches: [],
       whatsappNumber: APP_SETTINGS.whatsappNumber,
       whatsappDisplay: APP_SETTINGS.whatsappDisplay
     };

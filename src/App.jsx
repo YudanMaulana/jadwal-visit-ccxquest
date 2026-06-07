@@ -144,7 +144,7 @@ function App() {
   const handleWhatsAppClick = () => {
     const formattedDate = formatDateIndonesian(selectedDate);
     const text =
-`Kirimkan pesan berikut untuk reservasi:
+`Isi dan kirimkan pesan berikut untuk reservasi:
 
 Nama PIC/Penanggungjawab: 
 Tanggal Kunjungan: ${formattedDate}
