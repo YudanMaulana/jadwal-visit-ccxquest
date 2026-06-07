@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../config/firebase";
 import { APP_SETTINGS } from "../config/settings";
 
@@ -81,3 +81,52 @@ export async function saveScheduleByDate(dateString, data) {
     return { success: false, error };
   }
 }
+
+/**
+ * Fetches all schedules in the collection to populate calendar indicators.
+ * 
+ * @returns {Promise<Object>} Map of YYYY-MM-DD date strings to schedule data
+ */
+export async function getAllSchedules() {
+  if (!isFirebaseConfigured || !db) {
+    console.log("[Demo Mode] Fetching empty schedules map");
+    return {};
+  }
+
+  try {
+    const querySnapshot = await getDocs(collection(db, "jadwal_kunjungan_ccxquest"));
+    const schedules = {};
+    querySnapshot.forEach((doc) => {
+      schedules[doc.id] = doc.data();
+    });
+    console.log(`[Firestore] Loaded ${Object.keys(schedules).length} schedules for calendar.`);
+    return schedules;
+  } catch (error) {
+    console.error("Error fetching all schedules from Firestore:", error);
+    return {};
+  }
+}
+
+/**
+ * Deletes/Resets the schedule configuration for a specific date.
+ * 
+ * @param {string} dateString - Format 'YYYY-MM-DD'
+ * @returns {Promise<{success: boolean, error: any}>}
+ */
+export async function deleteScheduleByDate(dateString) {
+  if (!isFirebaseConfigured || !db) {
+    console.log(`[Demo Mode] Reset schedule (deleted) for: ${dateString}`);
+    return { success: true, mocked: true };
+  }
+
+  try {
+    const docRef = doc(db, "jadwal_kunjungan_ccxquest", dateString);
+    await deleteDoc(docRef);
+    console.log(`[Firestore] Deleted custom schedule for: ${dateString}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`Error deleting schedule for ${dateString} from Firestore:`, error);
+    return { success: false, error };
+  }
+}
+

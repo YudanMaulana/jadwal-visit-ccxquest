@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   getScheduleByDate, 
-  saveScheduleByDate 
+  saveScheduleByDate,
+  getAllSchedules,
+  deleteScheduleByDate
 } from './services/scheduleService';
 import { isFirebaseConfigured } from './config/firebase';
 import { APP_SETTINGS } from './config/settings';
@@ -15,7 +17,10 @@ import {
   Clock, 
   Save, 
   RefreshCw,
-  Eye
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  Trash2
 } from 'lucide-react';
 
 function App() {
@@ -40,7 +45,14 @@ function App() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [adminBatches, setAdminBatches] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [adminMessage, setAdminMessage] = useState({ type: '', text: '' });
+
+  // Custom calendar state
+  const [allSchedules, setAllSchedules] = useState({});
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
 
   // Listen to popstate changes (back/forward button)
   useEffect(() => {
@@ -49,6 +61,20 @@ function App() {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Fetch all schedules for calendar indicators
+  const fetchSchedulesMap = async () => {
+    try {
+      const data = await getAllSchedules();
+      setAllSchedules(data);
+    } catch (err) {
+      console.error('Error fetching schedules map:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSchedulesMap();
   }, []);
 
   // Custom SPA navigator
@@ -106,11 +132,12 @@ function App() {
     fetchSchedule(selectedDate);
   }, [selectedDate]);
 
-  // Handle custom date picker change
-  const handleDatePickerChange = (e) => {
-    if (e.target.value) {
-      setSelectedDate(e.target.value);
-    }
+  // Open calendar aligned with selected date
+  const openCalendar = () => {
+    const [year, month] = selectedDate.split('-').map(Number);
+    setCalMonth(month - 1);
+    setCalYear(year);
+    setIsCalendarOpen(true);
   };
 
   // Handle WhatsApp Link Click
@@ -205,9 +232,10 @@ function App() {
             : 'Jadwal berhasil diperbarui di Firestore!' 
         });
         
-        // Refresh local data
+        // Refresh local data and map indicators
         setBatches(validatedBatches);
         setAdminBatches(validatedBatches);
+        await fetchSchedulesMap();
       } else {
         setAdminMessage({ type: 'error', text: 'Gagal menyimpan ke Firestore: ' + result.error?.message });
       }
@@ -216,6 +244,268 @@ function App() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Delete/reset schedule from Firestore (CRUD: Delete)
+  const handleDeleteAdmin = async () => {
+    if (!window.confirm(`Apakah Anda yakin ingin reset jadwal kunjungan untuk tanggal ${formatDateIndonesian(selectedDate)}? Jadwal akan kembali ke default.`)) {
+      return;
+    }
+    setIsDeleting(true);
+    setAdminMessage({ type: '', text: '' });
+    
+    try {
+      const result = await deleteScheduleByDate(selectedDate);
+      if (result.success) {
+        setAdminMessage({
+          type: 'success',
+          text: result.mocked 
+            ? 'Jadwal di-reset ke default (Demo Mode).' 
+            : 'Jadwal berhasil di-reset ke default!'
+        });
+        
+        // Refresh local details and schedules map
+        await fetchSchedule(selectedDate);
+        await fetchSchedulesMap();
+      } else {
+        setAdminMessage({ type: 'error', text: 'Gagal mereset jadwal: ' + result.error?.message });
+      }
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: 'Terjadi kesalahan saat mereset jadwal.' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // --- CALENDAR MODAL COMPONENT ---
+  const renderCalendarModal = () => {
+    if (!isCalendarOpen) return null;
+
+    const monthNames = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    const dayNames = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+
+    // Get number of days in viewed month
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    // Get start day offset (0 = Sunday, 6 = Saturday)
+    const startOffset = new Date(calYear, calMonth, 1).getDay();
+
+    // Prepare calendar cells
+    const cells = [];
+    // Blank padding cells for start offset
+    for (let i = 0; i < startOffset; i++) {
+      cells.push({ key: `blank-${i}`, isBlank: true });
+    }
+
+    const todayStr = getTodayDateString();
+    
+    // Day cells
+    for (let day = 1; day <= daysInMonth; day++) {
+      const monthStr = String(calMonth + 1).padStart(2, '0');
+      const dayStr = String(day).padStart(2, '0');
+      const dateStr = `${calYear}-${monthStr}-${dayStr}`;
+      
+      // Past date check
+      const cellDateObj = new Date(calYear, calMonth, day);
+      const todayDateObj = new Date();
+      cellDateObj.setHours(0, 0, 0, 0);
+      todayDateObj.setHours(0, 0, 0, 0);
+      
+      const isPast = cellDateObj < todayDateObj;
+      const isSelected = dateStr === selectedDate;
+      const isToday = dateStr === todayStr;
+
+      // Check visit status in allSchedules
+      const schedule = allSchedules[dateStr];
+      const hasVisitData = !!schedule;
+      let isFull = false;
+      if (hasVisitData && schedule.batches) {
+        isFull = schedule.batches.every(b => 
+          b.status === 'penuh' || (b.status === 'tersedia_quota' && b.quota === 0)
+        );
+      }
+
+      cells.push({
+        key: `day-${day}`,
+        day,
+        dateStr,
+        isPast,
+        isSelected,
+        isToday,
+        hasVisitData,
+        isFull,
+        isBlank: false
+      });
+    }
+
+    const handlePrevMonth = () => {
+      const today = new Date();
+      if (calYear < today.getFullYear() || 
+         (calYear === today.getFullYear() && calMonth <= today.getMonth())) {
+        return;
+      }
+      if (calMonth === 0) {
+        setCalMonth(11);
+        setCalYear(prev => prev - 1);
+      } else {
+        setCalMonth(prev => prev - 1);
+      }
+    };
+
+    const handleNextMonth = () => {
+      if (calMonth === 11) {
+        setCalMonth(0);
+        setCalYear(prev => prev + 1);
+      } else {
+        setCalMonth(prev => prev + 1);
+      }
+    };
+
+    const handleSelectDay = (dateStr) => {
+      setSelectedDate(dateStr);
+      setIsCalendarOpen(false);
+    };
+
+    const todayVal = new Date();
+    const isPrevDisabled = calYear < todayVal.getFullYear() || 
+      (calYear === todayVal.getFullYear() && calMonth <= todayVal.getMonth());
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs transition-all duration-200">
+        <div 
+          className="bg-[#0b172a] border border-[#1e3d6b] rounded-2xl w-full max-w-[380px] shadow-[0_0_50px_rgba(0,149,255,0.25)] p-5 relative text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Modal Header */}
+          <div className="flex items-center justify-between border-b border-[#1e3d6b] pb-3 mb-4">
+            <h3 className="text-sm font-bold font-orbitron tracking-wider text-cyan-400">PILIH TANGGAL KUNJUNGAN</h3>
+            <button 
+              onClick={() => setIsCalendarOpen(false)}
+              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Month/Year Navigation */}
+          <div className="flex items-center justify-between mb-4 px-1">
+            <button
+              onClick={handlePrevMonth}
+              disabled={isPrevDisabled}
+              className={`p-1.5 rounded-lg border border-slate-700 transition-all ${
+                isPrevDisabled 
+                  ? 'opacity-30 cursor-not-allowed' 
+                  : 'hover:bg-[#1a385f] hover:border-cyan-400 text-slate-300 hover:text-white cursor-pointer'
+              }`}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            
+            <span className="font-bold text-sm tracking-wide">
+              {monthNames[calMonth]} {calYear}
+            </span>
+
+            <button
+              onClick={handleNextMonth}
+              className="p-1.5 rounded-lg border border-slate-700 hover:bg-[#1a385f] hover:border-cyan-400 text-slate-300 hover:text-white transition-all cursor-pointer"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+
+          {/* Weekday Names */}
+          <div className="grid grid-cols-7 gap-1 text-center mb-1">
+            {dayNames.map((n, idx) => (
+              <span key={idx} className={`text-[10px] font-bold uppercase py-1 ${idx === 0 ? 'text-rose-500' : 'text-slate-400'}`}>
+                {n}
+              </span>
+            ))}
+          </div>
+
+          {/* Days Grid */}
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {cells.map((cell) => {
+              if (cell.isBlank) {
+                return <div key={cell.key} className="aspect-square" />;
+              }
+
+              let btnClass = "aspect-square flex flex-col items-center justify-center text-xs font-bold rounded-lg relative transition-all ";
+              let marker = null;
+
+              if (cell.isPast) {
+                btnClass += "text-slate-600 cursor-not-allowed opacity-40 bg-transparent";
+              } else {
+                btnClass += "cursor-pointer ";
+                
+                if (cell.isSelected) {
+                  btnClass += "bg-gradient-to-r from-blue-700 to-cyan-600 text-white shadow-[0_0_12px_rgba(0,149,255,0.4)] border border-cyan-400";
+                } else if (cell.isToday) {
+                  btnClass += "bg-slate-900 border border-yellow-500 text-yellow-550 hover:bg-slate-800";
+                } else {
+                  btnClass += "bg-black/20 text-slate-200 hover:bg-[#10243d] hover:text-white border border-transparent";
+                }
+
+                // Visit status markers
+                if (cell.hasVisitData) {
+                  if (cell.isFull) {
+                    marker = (
+                      <span 
+                        className={`absolute bottom-1 w-1.5 h-1.5 rounded-full bg-red-500 ${cell.isSelected ? 'border border-white' : ''}`}
+                        title="Kunjungan Penuh"
+                      />
+                    );
+                    if (!cell.isSelected) {
+                      btnClass += " text-red-200/80 hover:text-red-100";
+                    }
+                  } else {
+                    marker = (
+                      <span 
+                        className={`absolute bottom-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ${cell.isSelected ? 'border border-white' : ''}`} 
+                        title="Ada Jadwal Visit"
+                      />
+                    );
+                    if (!cell.isSelected) {
+                      btnClass += " text-emerald-200/85 hover:text-emerald-100";
+                    }
+                  }
+                }
+              }
+
+              return (
+                <button
+                  key={cell.key}
+                  disabled={cell.isPast}
+                  onClick={() => handleSelectDay(cell.dateStr)}
+                  className={btnClass}
+                >
+                  <span>{cell.day}</span>
+                  {marker}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Calendar Legends */}
+          <div className="mt-5 pt-3 border-t border-[#1e3d6b] flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-350 justify-center">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-slate-900 border border-yellow-500" />
+              <span>Hari Ini</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Ada Kunjungan</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-red-500" />
+              <span>Penuh</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // --- RENDERING ROUTE: ADMIN PANEL ---
@@ -311,18 +601,14 @@ function App() {
                   <p className="text-sm font-bold text-white mt-0.5">{formatDateIndonesian(selectedDate)}</p>
                 </div>
                 
-                {/* Datepicker inside admin panel */}
-                <div className="relative bg-[#0b172a] hover:bg-[#1a385f] px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer flex items-center gap-1.5 text-xs text-slate-350">
+                {/* Datepicker trigger inside admin panel */}
+                <button 
+                  onClick={openCalendar}
+                  className="bg-[#0b172a] hover:bg-[#1a385f] px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer flex items-center gap-1.5 text-xs text-slate-350 focus:outline-none"
+                >
                   <Calendar size={13} className="text-cyan-400" />
                   <span>Ubah Tanggal</span>
-                  <input 
-                    type="date" 
-                    value={selectedDate}
-                    min={getTodayDateString()}
-                    onChange={handleDatePickerChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer w-full"
-                  />
-                </div>
+                </button>
               </div>
 
               {/* Batch Editor List */}
@@ -387,29 +673,44 @@ function App() {
               </div>
 
               {/* Save and Controls */}
-              <div className="flex gap-3 pt-3 border-t border-[#1e3d6b]">
+              <div className="flex flex-col gap-2.5 pt-3 border-t border-[#1e3d6b]">
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleDeleteAdmin}
+                    disabled={isDeleting || isSaving}
+                    className="flex-1 py-2.5 bg-red-950/40 hover:bg-red-900/40 text-red-200 rounded-xl text-xs font-bold border border-red-900/60 transition-all font-orbitron cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-30"
+                  >
+                    {isDeleting ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
+                    RESET DEFAULT
+                  </button>
+                  
+                  <button
+                    onClick={handleSaveAdmin}
+                    disabled={isSaving || isDeleting}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold font-orbitron tracking-wider flex items-center justify-center gap-1.5 shadow-lg disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSaving ? (
+                      <RefreshCw size={14} className="animate-spin" />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    SIMPAN JADWAL
+                  </button>
+                </div>
+
                 <button
                   onClick={() => {
                     setIsUnlocked(false);
                     setPasscode('');
                     setAdminMessage({ type: '', text: '' });
                   }}
-                  className="flex-1 py-2.5 bg-slate-850 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-700 transition-all font-orbitron cursor-pointer"
+                  className="w-full py-2 bg-slate-850 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-700 transition-all font-orbitron cursor-pointer"
                 >
                   LOGOUT
-                </button>
-                
-                <button
-                  onClick={handleSaveAdmin}
-                  disabled={isSaving}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold font-orbitron tracking-wider flex items-center justify-center gap-1.5 shadow-lg disabled:opacity-50 cursor-pointer"
-                >
-                  {isSaving ? (
-                    <RefreshCw size={14} className="animate-spin" />
-                  ) : (
-                    <Save size={14} />
-                  )}
-                  SIMPAN JADWAL
                 </button>
               </div>
 
@@ -417,6 +718,9 @@ function App() {
           )}
 
         </div>
+
+        {/* Render calendar modal inside admin path */}
+        {renderCalendarModal()}
       </div>
     );
   }
@@ -440,19 +744,15 @@ function App() {
         {/* --- DYNAMIC DATE OVERLAY --- */}
         {/* Replaces the static 'Kamis, 11 Juni 2026' date exactly in its position */}
         <div className="absolute top-[25.6%] left-0 w-full flex justify-center z-20">
-          <div className="relative bg-[#0d2138] px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/30 hover:border-[#00f0ff] rounded-full shadow-[0_0_15px_rgba(251,192,45,0.15)] flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-102">
+          <button 
+            onClick={openCalendar}
+            className="relative bg-[#0d2138] px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/30 hover:border-[#00f0ff] rounded-full shadow-[0_0_15px_rgba(251,192,45,0.15)] flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-102 focus:outline-none"
+          >
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
             <span className="font-sans font-black tracking-wider text-[#fbc02d] text-xs md:text-sm uppercase">
               {formatDateIndonesian(selectedDate)}
             </span>
-            <input 
-              type="date" 
-              value={selectedDate}
-              min={getTodayDateString()}
-              onChange={handleDatePickerChange}
-              className="absolute inset-0 opacity-0 cursor-pointer w-full"
-            />
-          </div>
+          </button>
         </div>
 
         {/* --- DYNAMIC TABLE OVERLAY --- */}
@@ -537,7 +837,7 @@ function App() {
         <div className="absolute top-[2%] right-[3%] z-30">
           <button
             onClick={() => navigateTo('/admin')}
-            className="p-1.5 bg-black/40 text-slate-400 hover:text-[#00f0ff] hover:bg-black/60 rounded-full border border-slate-700/35 transition-all cursor-pointer"
+            className="p-1.5 bg-black/40 text-slate-400 hover:text-[#00f0ff] hover:bg-black/60 rounded-full border border-slate-700/35 transition-all cursor-pointer focus:outline-none"
             title="Go to Admin Panel"
           >
             <Settings size={14} />
@@ -546,6 +846,8 @@ function App() {
 
       </div>
 
+      {/* Render calendar modal inside public path */}
+      {renderCalendarModal()}
     </div>
   );
 }
