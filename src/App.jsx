@@ -185,8 +185,9 @@ function App() {
       const quotaVal = field === 'quota' ? finalValue : updated[index].quota;
       
       if (statusType === 'tersedia_quota') {
-        const qVal = quotaVal === '' ? 0 : quotaVal;
-        updated[index].statusLabel = `TERSEDIA ${qVal} ORANG`;
+        const booked = quotaVal === '' ? 0 : parseInt(quotaVal) || 0;
+        const remaining = 54 - booked;
+        updated[index].statusLabel = remaining <= 0 ? 'PENUH' : `TERSEDIA ${remaining} ORANG`;
       } else if (statusType === 'tersedia') {
         updated[index].statusLabel = 'TERSEDIA';
         updated[index].quota = null;
@@ -207,11 +208,12 @@ function App() {
     // Ensure we validate quota for all batches before saving
     const validatedBatches = adminBatches.slice(0, 5).map(b => {
       if (b.status === 'tersedia_quota') {
-        const quota = Math.min(54, Math.max(0, parseInt(b.quota) || 0));
+        const booked = Math.min(54, Math.max(0, parseInt(b.quota) || 0));
+        const remaining = 54 - booked;
         return {
           ...b,
-          quota,
-          statusLabel: `TERSEDIA ${quota} ORANG`
+          quota: booked,
+          statusLabel: remaining <= 0 ? 'PENUH' : `TERSEDIA ${remaining} ORANG`
         };
       }
       return b;
@@ -324,7 +326,7 @@ function App() {
       let isFull = false;
       if (hasVisitData && schedule.batches) {
         isFull = schedule.batches.every(b => 
-          b.status === 'penuh' || (b.status === 'tersedia_quota' && b.quota === 0)
+          b.status === 'penuh' || (b.status === 'tersedia_quota' && (parseInt(b.quota) || 0) >= 54)
         );
       }
 
@@ -654,7 +656,7 @@ function App() {
 
                         {/* Quota input (max 54 people) */}
                         <div>
-                          <label className="text-[9px] text-slate-500 uppercase block mb-0.5">Kuota Orang (Maks 54)</label>
+                          <label className="text-[9px] text-slate-500 uppercase block mb-0.5">Terbooking (Maks 54)</label>
                           <input 
                             type="number"
                             disabled={batch.status !== 'tersedia_quota'}
@@ -739,25 +741,34 @@ function App() {
         Main Card Simulator with Locked Aspect Ratio matching the original poster (9:16).
         This makes the flyer look EXACTLY like the image, with all dynamic elements layered precisely on top.
       */}
-      <div className="relative w-full md:w-[450px] aspect-[9/16] bg-[url('/bg-flyer.jpg')] bg-cover bg-center overflow-hidden shadow-[0_0_50px_rgba(0,149,255,0.25)] border-0 md:border md:border-[#1a385f]/30 md:rounded-3xl">
+      <div 
+        onContextMenu={(e) => e.preventDefault()}
+        onDragStart={(e) => e.preventDefault()}
+        className="relative w-full md:w-[450px] aspect-[9/16] bg-[url('/bg-flyer.webp')] bg-cover bg-center overflow-hidden shadow-[0_0_50px_rgba(0,149,255,0.25)] border-0 md:border md:border-[#1a385f]/30 md:rounded-3xl select-none"
+      >
         
         {/* --- DYNAMIC DATE OVERLAY --- */}
-        {/* Replaces the static 'Kamis, 11 Juni 2026' date exactly in its position */}
-        <div className="absolute top-[25.6%] left-0 w-full flex justify-center z-20">
+        {/* Positioned between X-Quest logo and the title at ~27% */}
+        <div className="absolute top-[27%] left-0 w-full flex justify-center z-20">
           <button 
             onClick={openCalendar}
-            className="relative bg-[#0d2138] px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/30 hover:border-[#00f0ff] rounded-full shadow-[0_0_15px_rgba(251,192,45,0.15)] flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-102 focus:outline-none"
+            className="relative bg-[#0d2138]/95 px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/35 hover:border-[#00f0ff] rounded-full shadow-[0_0_18px_rgba(0,240,255,0.15)] flex items-center gap-3 cursor-pointer transition-all duration-200 hover:scale-102 focus:outline-none"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-            <span className="font-sans font-black tracking-wider text-[#fbc02d] text-xs md:text-sm uppercase">
-              {formatDateIndonesian(selectedDate)}
-            </span>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
+            <div className="flex flex-col items-center">
+              <span className="font-sans font-black tracking-wider text-[#fbc02d] text-[11px] md:text-xs uppercase leading-tight">
+                {formatDateIndonesian(selectedDate)}
+              </span>
+              <span className="text-[8px] text-[#00f0ff] font-bold font-orbitron tracking-widest uppercase mt-0.5 animate-pulse leading-none">
+                KLIK UNTUK PILIH TANGGAL
+              </span>
+            </div>
           </button>
         </div>
 
         {/* --- DYNAMIC TABLE OVERLAY --- */}
-        {/* Placed precisely over the original table using flexbox divs for even spacing */}
-        <div className="absolute top-[32.5%] left-[8.67%] w-[81.22%] h-[34.12%] z-20 bg-[#0c1f3d] border border-white/20 rounded-lg overflow-hidden flex flex-col justify-start">
+        {/* Table area on the new flyer: top=34%, left=8%, width=84%, height=27% */}
+        <div className="absolute top-[34%] left-[8%] w-[84%] h-[27%] z-20 bg-[#0c1f3d] border border-white/20 rounded-lg overflow-hidden flex flex-col justify-start">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin mb-3" />
@@ -793,11 +804,21 @@ function App() {
                 {batches.map((batch, index) => {
                   let statusBgClass = 'bg-[#0bb75c]';
                   let statusTextClass = 'text-white font-extrabold text-[9px] md:text-xs tracking-wider';
+                  let displayLabel = 'TERSEDIA';
 
                   if (batch.status === 'tersedia_quota') {
-                    statusBgClass = 'bg-[#f0a53b]';
+                    const booked = parseInt(batch.quota) || 0;
+                    const remaining = 54 - booked;
+                    if (remaining <= 0) {
+                      statusBgClass = 'bg-[#ef4444]';
+                      displayLabel = 'PENUH';
+                    } else {
+                      statusBgClass = 'bg-[#f0a53b]';
+                      displayLabel = `TERSEDIA ${remaining} ORANG`;
+                    }
                   } else if (batch.status === 'penuh') {
                     statusBgClass = 'bg-[#ef4444]';
+                    displayLabel = 'PENUH';
                   }
 
                   return (
@@ -811,10 +832,15 @@ function App() {
                       <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-[#8db3e2] font-orbitron bg-[#0c1f3d]">
                         {batch.time}
                       </div>
-                      <div className={`w-[40%] flex items-center justify-center p-1 text-center ${statusBgClass}`}>
+                      <div className={`w-[40%] flex flex-col items-center justify-center p-1 text-center ${statusBgClass}`}>
                         <span className={statusTextClass}>
-                          {batch.statusLabel || (batch.status === 'penuh' ? 'PENUH' : 'TERSEDIA')}
+                          {displayLabel}
                         </span>
+                        {batch.status === 'tersedia' && (
+                          <span className="text-white/80 font-bold text-[7px] md:text-[8px] tracking-wide leading-tight mt-0.5">
+                            maks 54 orang
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -824,13 +850,28 @@ function App() {
           )}
         </div>
 
-        {/* --- DYNAMIC WHATSAPP CALL-TO-ACTION OVERLAY --- */}
-        {/* Transparent Clickable Button directly over the static phone number text */}
-        <button
-          onClick={handleWhatsAppClick}
-          className="absolute top-[67.0%] left-[8.89%] w-[48%] h-[8.5%] z-20 cursor-pointer focus:outline-none rounded-lg hover:bg-white/5 transition-colors duration-250"
-          title="Hubungi WhatsApp Admin"
-        />
+        {/* --- WHATSAPP CALL-TO-ACTION BUTTON --- */}
+        {/* Aligned with "Catatan:" text: top=65%, left=5%, width=50% */}
+        <div className="absolute top-[67%] left-[3%] w-[40%] z-20">
+          <button
+            onClick={handleWhatsAppClick}
+            className="w-full py-1 flex items-center justify-center gap-1.5 rounded-lg cursor-pointer focus:outline-none transition-all duration-200 hover:scale-102 active:scale-98"
+            style={{
+              background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)',
+              boxShadow: '0 0 20px rgba(37,211,102,0.45)',
+              border: '1px solid rgba(37,211,102,0.5)'
+            }}
+            title="Hubungi WhatsApp Admin"
+          >
+            <svg viewBox="0 0 24 24" className="w-3 h-3 fill-white flex-shrink-0">
+              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+              <path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.558 4.121 1.535 5.849L.057 23.625a.75.75 0 0 0 .92.92l5.776-1.478A11.944 11.944 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.718 9.718 0 0 1-4.953-1.352l-.355-.211-3.68.941.957-3.594-.232-.37A9.718 9.718 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
+            </svg>
+            <span className="text-white font-black text-[9px] font-orbitron tracking-wider uppercase">
+              Booking via WhatsApp
+            </span>
+          </button>
+        </div>
 
 
 
