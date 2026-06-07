@@ -1,0 +1,325 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function currentEmail() {
+      return request.auth != null
+        && request.auth.token.email is string
+        ? request.auth.token.email
+        : '';
+    }
+
+    function isFaceguardAdmin() {
+      return request.auth != null
+        && (
+          request.auth.token.admin == true
+          || (
+            request.auth.token.email is string
+            && request.auth.token.email == 'admin@garudafoodsmd.com'
+          )
+        );
+    }
+
+    function isValidUid(uid) {
+      return uid is string
+        && uid.size() >= 6
+        && uid.size() <= 128
+        && uid.matches('^fg_[A-Za-z0-9_-]+$');
+    }
+
+    function isPatrolAdmin() {
+      return isSignedIn()
+        && currentEmail() in [
+          'admin@garudafoodsmd.com',
+          'management@garudafoodsmd.com',
+          'admin@garudafood.com',
+          'management@garudafood.com'
+        ];
+    }
+
+    function isPatrolViewer() {
+      return isSignedIn()
+        && currentEmail() == 'admindc@garudafood.com';
+    }
+
+    function isGeneratedPersonId(personId) {
+      return personId is string
+        && personId.size() >= 6
+        && personId.size() <= 128
+        && personId.matches('^fg-[A-Za-z0-9_-]+$');
+    }
+
+    function isOwnProfile(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isOwnSecurityEmail(value) {
+      return isSignedIn()
+        && value is string
+        && value == currentEmail();
+    }
+
+    function sessionPath(uid) {
+      return /databases/$(database)/documents/garudashield_gfsmd_faceid/root/scan_sessions/$(uid);
+    }
+
+    function sessionExists(uid) {
+      return exists(sessionPath(uid));
+    }
+
+    function sessionData(uid) {
+      return get(sessionPath(uid)).data;
+    }
+
+    function isClosedStatus(status) {
+      return status == 'checked_out'
+        || status == 'expired'
+        || status == 'closed';
+    }
+
+    function sessionIsOpen(uid) {
+      return sessionExists(uid) && !isClosedStatus(sessionData(uid).status);
+    }
+
+    function isAllowedFormData(formData) {
+      return formData is map
+        && formData.keys().hasOnly([
+          'jenis',
+          'kategori',
+          'nama',
+          'addressType',
+          'alamat',
+          'detailAlamat',
+          'provinsi',
+          'provinsiId',
+          'kabupatenKota',
+          'kabupatenKotaId',
+          'kecamatan',
+          'kecamatanId',
+          'desaKelurahan',
+          'desaKelurahanId',
+          'phoneNumber',
+          'picTarget',
+          'purpose',
+          'masukProduksi',
+          'persetujuanKesehatanProduksi',
+          'processNumber',
+          'process_number',
+          'nomorProses',
+          'nomor_proses',
+          'stepNumber',
+          'status',
+        ]);
+    }
+
+    match /locations/{locationId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isPatrolAdmin();
+    }
+
+    match /checkins/{checkinId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.security_id is string
+        && isOwnSecurityEmail(request.resource.data.security_id);
+      allow update, delete: if isPatrolAdmin();
+    }
+
+    match /profiles/{userId} {
+      allow read: if isPatrolAdmin() || isPatrolViewer() || isOwnProfile(userId);
+      allow create: if isPatrolAdmin() || (
+        isOwnProfile(userId)
+        && request.resource.data.email is string
+        && isOwnSecurityEmail(request.resource.data.email)
+      );
+      allow update: if isPatrolAdmin() || (
+        isOwnProfile(userId)
+        && request.resource.data.email is string
+        && isOwnSecurityEmail(request.resource.data.email)
+      );
+      allow delete: if isPatrolAdmin();
+    }
+
+    match /daily_patrol_approvals/{approvalId} {
+      allow read: if isPatrolAdmin() || isPatrolViewer() || (
+        isSignedIn()
+        && resource.data.security_id is string
+        && resource.data.security_id == currentEmail()
+      );
+      allow create, update, delete: if isPatrolAdmin();
+    }
+
+    // Aturan untuk status backup (bisa dibaca semua user login, bisa ditulis oleh admin & viewer presentasi)
+    match /backup_marks/{markId} {
+      allow read: if isSignedIn();
+      allow write: if isPatrolAdmin() || isPatrolViewer();
+    }
+
+    match /garudashield_gfsmd_faceid/root {
+      match /scan_sessions/{uid} {
+        allow get: if isValidUid(uid);
+        allow list: if false;
+
+        allow update: if isValidUid(uid)
+          && sessionIsOpen(uid)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.person_id == resource.data.person_id
+          && request.resource.data.source == resource.data.source
+          && request.resource.data.snapshot_path == resource.data.snapshot_path
+          && request.resource.data.embedding_length == resource.data.embedding_length
+          && request.resource.data.capture_mode == resource.data.capture_mode
+          && request.resource.data.created_at == resource.data.created_at
+          && (
+            // Option A: Regular visitor filling and check-in
+            (
+              request.resource.data.qr_url == resource.data.qr_url
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                'status',
+                'jenis',
+                'kategori',
+                'name',
+                'submitted_name',
+                'submitted_label',
+                'phone_number',
+                'no_hp',
+                'pic_target',
+                'meet_person',
+                'purpose',
+                'process_number',
+                'process_label',
+                'has_user_signature',
+                'has_host_signature',
+                'signature_user_points',
+                'signature_host_points',
+                'updated_at',
+                'form_submitted_at',
+                'checked_in_at',
+              ])
+              && (
+                request.resource.data.status == 'checked_in'
+                || request.resource.data.status == 'submitted'
+                || request.resource.data.status == 'signing'
+                || request.resource.data.status == 'filling'
+                || request.resource.data.status == 'safety'
+              )
+            )
+            ||
+            // Option B: Manual checkout by visitor when enabled by admin
+            (
+              resource.data.allow_manual_checkout == true
+              && request.resource.data.status == 'checked_out'
+              && request.resource.data.qr_url == ''
+              && request.resource.data.barcode_active == false
+              && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+                'status',
+                'qr_url',
+                'barcode_active',
+                'updated_at',
+                'checkout_at',
+              ])
+            )
+          );
+      }
+
+      match /app_config/{document} {
+        allow get: if document == 'guest_form_catalog';
+        allow list: if false;
+        allow write: if false;
+      }
+
+      match /indonesia_location_provinces/{document} {
+        allow get: if document == 'all';
+        allow list: if false;
+      }
+
+      match /indonesia_location_regencies/{document} {
+        allow get: if document is string;
+        allow list: if false;
+      }
+
+      match /indonesia_location_districts/{document} {
+        allow get: if document is string;
+        allow list: if false;
+      }
+
+      match /indonesia_location_villages/{document} {
+        allow get: if document is string;
+        allow list: if false;
+      }
+
+      match /form_submissions/{uid} {
+        allow get: if isFaceguardAdmin() || isPatrolViewer();
+        allow list: if false;
+
+        allow create, update: if isValidUid(uid)
+          && sessionIsOpen(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.person_id == sessionData(uid).person_id
+          && request.resource.data.source == sessionData(uid).source
+          && request.resource.data.keys().hasOnly([
+            'uid',
+            'person_id',
+            'name',
+            'label',
+            'source',
+            'status',
+            'process_number',
+            'submitted_label',
+            'jenis',
+            'kategori',
+            'submitted_name',
+            'phone_number',
+            'no_hp',
+            'pic_target',
+            'meet_person',
+            'purpose',
+            'form_data',
+            'signature_user',
+            'signature_host',
+            'signature_user_points',
+            'signature_host_points',
+            'submitted_at',
+            'updated_at',
+          ])
+          && isAllowedFormData(request.resource.data.form_data);
+      }
+
+      match /persons/{document} {
+        allow read: if isFaceguardAdmin() || isPatrolViewer();
+        allow create, update: if isFaceguardAdmin() && isGeneratedPersonId(document);
+      }
+
+      match /face_templates/{document} {
+        allow read: if isFaceguardAdmin() || isPatrolViewer();
+        allow create, update: if isFaceguardAdmin() && isGeneratedPersonId(document);
+      }
+
+      match /absensi/{document} {
+        allow read: if isFaceguardAdmin() || isPatrolViewer();
+        allow write: if isFaceguardAdmin();
+      }
+
+      match /attendance_events/{document} {
+        allow read: if isFaceguardAdmin() || isPatrolViewer();
+        allow write: if isFaceguardAdmin();
+      }
+
+      match /visit_events/{document} {
+        allow read: if isFaceguardAdmin() || isPatrolViewer();
+        allow write: if isFaceguardAdmin();
+      }
+    }
+
+    match /jadwal_kunjungan_ccxquest/{date} {
+      allow read, write: if true;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

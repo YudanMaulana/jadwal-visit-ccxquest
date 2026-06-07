@@ -1,0 +1,553 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  getScheduleByDate, 
+  saveScheduleByDate 
+} from './services/scheduleService';
+import { isFirebaseConfigured } from './config/firebase';
+import { APP_SETTINGS } from './config/settings';
+import { 
+  Calendar, 
+  Settings, 
+  Lock, 
+  X, 
+  CheckCircle, 
+  AlertTriangle, 
+  Clock, 
+  Save, 
+  RefreshCw,
+  Eye
+} from 'lucide-react';
+
+function App() {
+  // Real-time current date as default state (YYYY-MM-DD)
+  const getTodayDateString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Path routing state (handles / and /admin)
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
+  const [batches, setBatches] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Admin panel state
+  const [passcode, setPasscode] = useState('');
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [adminBatches, setAdminBatches] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [adminMessage, setAdminMessage] = useState({ type: '', text: '' });
+
+  // Listen to popstate changes (back/forward button)
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Custom SPA navigator
+  const navigateTo = (path) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(path);
+  };
+
+  // Format YYYY-MM-DD into "Kamis, 11 Juni 2026"
+  const formatDateIndonesian = (dateStr) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const dateObj = new Date(year, month - 1, day);
+    
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    
+    const dayName = days[dateObj.getDay()];
+    const dayNum = dateObj.getDate();
+    const monthName = months[dateObj.getMonth()];
+    const fullYear = dateObj.getFullYear();
+    
+    return `${dayName}, ${dayNum} ${monthName} ${fullYear}`;
+  };
+
+  // Fetch schedule on date change
+  const fetchSchedule = async (dateStr) => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const data = await getScheduleByDate(dateStr);
+      
+      // Ensure we have at most 5 batches
+      let formattedBatches = data.batches || [];
+      if (formattedBatches.length > 5) {
+        formattedBatches = formattedBatches.slice(0, 5);
+      }
+      
+      setBatches(formattedBatches);
+      
+      // Seed admin state in case they open the editor
+      setAdminBatches(JSON.parse(JSON.stringify(formattedBatches)));
+    } catch (err) {
+      console.error(err);
+      setErrorMsg('Gagal memuat jadwal kunjungan.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSchedule(selectedDate);
+  }, [selectedDate]);
+
+  // Handle custom date picker change
+  const handleDatePickerChange = (e) => {
+    if (e.target.value) {
+      setSelectedDate(e.target.value);
+    }
+  };
+
+  // Handle WhatsApp Link Click
+  const handleWhatsAppClick = () => {
+    const formattedDate = formatDateIndonesian(selectedDate);
+    const text = `Halo Admin, saya ingin melakukan reservasi kunjungan Chocolatos X-Quest untuk tanggal *${formattedDate}*. Mohon info slot yang tersedia. Terima kasih!`;
+    const encodedText = encodeURIComponent(text);
+    const url = `https://wa.me/${APP_SETTINGS.whatsappNumber}?text=${encodedText}`;
+    window.open(url, '_blank');
+  };
+
+  // Unlock admin panel using passcode 'chocolatos!23'
+  const handleUnlockAdmin = (e) => {
+    e.preventDefault();
+    if (passcode === 'chocolatos!23') {
+      setIsUnlocked(true);
+      setAdminMessage({ type: 'success', text: 'Login Admin Berhasil! Anda dapat mengubah jadwal sekarang.' });
+      setTimeout(() => setAdminMessage({ type: '', text: '' }), 3000);
+    } else {
+      setAdminMessage({ type: 'error', text: 'Passcode salah. Silakan coba lagi.' });
+    }
+  };
+
+  // Update batch field in admin panel (max 5 batches, max 54 people per batch)
+  const updateAdminBatch = (index, field, value) => {
+    const updated = [...adminBatches];
+    let finalValue = value;
+    
+    // Validate and clamp quota to maximum of 54 people
+    if (field === 'quota') {
+      const parsed = parseInt(value);
+      if (isNaN(parsed)) {
+        finalValue = ''; // Allow emptying
+      } else {
+        // Enforce range: [0, 54]
+        finalValue = Math.min(54, Math.max(0, parsed));
+      }
+    }
+    
+    updated[index][field] = finalValue;
+    
+    // Automatically generate statusLabel based on status and quota
+    if (field === 'status' || field === 'quota') {
+      const statusType = field === 'status' ? finalValue : updated[index].status;
+      const quotaVal = field === 'quota' ? finalValue : updated[index].quota;
+      
+      if (statusType === 'tersedia_quota') {
+        const qVal = quotaVal === '' ? 0 : quotaVal;
+        updated[index].statusLabel = `TERSEDIA ${qVal} ORANG`;
+      } else if (statusType === 'tersedia') {
+        updated[index].statusLabel = 'TERSEDIA';
+        updated[index].quota = null;
+      } else if (statusType === 'penuh') {
+        updated[index].statusLabel = 'PENUH';
+        updated[index].quota = null;
+      }
+    }
+    
+    setAdminBatches(updated);
+  };
+
+  // Save changes to Firestore
+  const handleSaveAdmin = async () => {
+    setIsSaving(true);
+    setAdminMessage({ type: '', text: '' });
+    
+    // Ensure we validate quota for all batches before saving
+    const validatedBatches = adminBatches.slice(0, 5).map(b => {
+      if (b.status === 'tersedia_quota') {
+        const quota = Math.min(54, Math.max(0, parseInt(b.quota) || 0));
+        return {
+          ...b,
+          quota,
+          statusLabel: `TERSEDIA ${quota} ORANG`
+        };
+      }
+      return b;
+    });
+
+    try {
+      const result = await saveScheduleByDate(selectedDate, {
+        batches: validatedBatches,
+        whatsappNumber: APP_SETTINGS.whatsappNumber,
+        whatsappDisplay: APP_SETTINGS.whatsappDisplay
+      });
+      
+      if (result.success) {
+        setAdminMessage({ 
+          type: 'success', 
+          text: result.mocked 
+            ? 'Tersimpan lokal (Demo Mode)! Hubungkan Firebase untuk menyimpan permanen.' 
+            : 'Jadwal berhasil diperbarui di Firestore!' 
+        });
+        
+        // Refresh local data
+        setBatches(validatedBatches);
+        setAdminBatches(validatedBatches);
+      } else {
+        setAdminMessage({ type: 'error', text: 'Gagal menyimpan ke Firestore: ' + result.error?.message });
+      }
+    } catch (err) {
+      setAdminMessage({ type: 'error', text: 'Terjadi kesalahan saat menyimpan.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // --- RENDERING ROUTE: ADMIN PANEL ---
+  if (currentPath === '/admin') {
+    return (
+      <div className="min-h-screen bg-[#040811] flex items-center justify-center p-4 select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0d213b] via-[#050c18] to-[#02040a]">
+        
+        {/* Background Grids for Desktop Decoration */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block">
+          <div className="absolute top-10 left-10 w-96 h-96 bg-blue-500/5 rounded-full blur-[120px]" />
+          <div className="absolute bottom-10 right-10 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px]" />
+        </div>
+
+        <div className="bg-[#0b172a] border border-[#1e3d6b] rounded-2xl w-full max-w-[440px] shadow-[0_0_50px_rgba(0,149,255,0.15)] p-6 relative z-10">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6 border-b border-[#1e3d6b] pb-3">
+            <div className="flex items-center gap-2">
+              <Settings className="text-[#00f0ff]" size={20} />
+              <h2 className="text-base md:text-lg font-bold text-white font-orbitron tracking-wider">PANEL KONTROL ADMIN</h2>
+            </div>
+            
+            <button
+              onClick={() => navigateTo('/')}
+              className="text-xs text-cyan-400 hover:text-white flex items-center gap-1 bg-[#10243d] px-2.5 py-1 rounded-lg border border-[#1e3d6b] transition-all cursor-pointer"
+            >
+              <Eye size={12} />
+              <span>Lihat Flyer</span>
+            </button>
+          </div>
+
+          {/* Firebase configuration warning banner */}
+          {!isFirebaseConfigured && (
+            <div className="mb-4 bg-amber-950/20 border border-amber-500/20 p-3 rounded-lg flex gap-2.5 text-xs text-amber-200">
+              <AlertTriangle size={24} className="flex-shrink-0 text-amber-400" />
+              <div>
+                <p className="font-bold">Mode Demo (Lokal)</p>
+                <p>Firebase belum terkonfigurasi. Perubahan jadwal hanya disimpan sementara di memory untuk demonstrasi.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Admin Message Banner */}
+          {adminMessage.text && (
+            <div className={`mb-4 p-3 rounded-lg text-xs flex gap-2 ${
+              adminMessage.type === 'success' 
+                ? 'bg-emerald-950/30 border border-emerald-500/35 text-emerald-200' 
+                : 'bg-red-950/30 border border-red-500/35 text-red-200'
+            }`}>
+              {adminMessage.type === 'success' ? <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" /> : <AlertTriangle size={16} className="text-red-400 flex-shrink-0" />}
+              <span>{adminMessage.text}</span>
+            </div>
+          )}
+
+          {/* PASCODE UNLOCK SCREEN */}
+          {!isUnlocked ? (
+            <form onSubmit={handleUnlockAdmin} className="space-y-4">
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Silakan masukkan kata sandi admin untuk melakukan modifikasi jadwal pada database.
+              </p>
+              
+              <div className="space-y-2">
+                <label className="text-xs text-slate-300 font-semibold uppercase tracking-wider block">Kata Sandi</label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3 top-3.5 text-slate-500" />
+                  <input 
+                    type="password"
+                    placeholder="Masukkan sandi admin"
+                    value={passcode}
+                    onChange={(e) => setPasscode(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-black/40 border border-[#1e3d6b] rounded-xl text-white text-sm focus:border-cyan-400 focus:outline-none placeholder-slate-650"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-gradient-to-r from-blue-700 to-cyan-600 hover:from-blue-600 hover:to-cyan-500 text-white rounded-xl text-xs font-bold font-orbitron tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+              >
+                <Lock size={14} />
+                MASUK SEBAGAI ADMIN
+              </button>
+            </form>
+          ) : (
+            /* ADMIN PANEL MAIN EDITOR SCREEN */
+            <div className="space-y-5">
+              
+              {/* Date Reference */}
+              <div className="bg-[#10243d] p-3.5 rounded-xl border border-[#1a385f] flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">TANGGAL YANG DIEDIT</p>
+                  <p className="text-sm font-bold text-white mt-0.5">{formatDateIndonesian(selectedDate)}</p>
+                </div>
+                
+                {/* Datepicker inside admin panel */}
+                <div className="relative bg-[#0b172a] hover:bg-[#1a385f] px-2.5 py-1.5 rounded-lg border border-slate-700 transition-colors cursor-pointer flex items-center gap-1.5 text-xs text-slate-350">
+                  <Calendar size={13} className="text-cyan-400" />
+                  <span>Ubah Tanggal</span>
+                  <input 
+                    type="date" 
+                    value={selectedDate}
+                    min={getTodayDateString()}
+                    onChange={handleDatePickerChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                  />
+                </div>
+              </div>
+
+              {/* Batch Editor List */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-[#00f0ff] uppercase tracking-wider">DAFTAR BATCH (MAKS 5 BATCH)</h3>
+                
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  {adminBatches.map((batch, index) => (
+                    <div 
+                      key={batch.id} 
+                      className="p-3 bg-black/25 border border-slate-800 rounded-xl space-y-2 hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-white">{batch.batch}</span>
+                        
+                        {/* Batch Time input */}
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={11} className="text-slate-500" />
+                          <input 
+                            type="text" 
+                            value={batch.time}
+                            onChange={(e) => updateAdminBatch(index, 'time', e.target.value)}
+                            placeholder="08:45"
+                            className="w-[60px] text-center px-1.5 py-0.5 bg-black/50 border border-slate-700 rounded text-slate-200 text-xs font-bold focus:border-cyan-400 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Status Picker */}
+                        <div>
+                          <label className="text-[9px] text-slate-500 uppercase block mb-0.5">Status</label>
+                          <select
+                            value={batch.status}
+                            onChange={(e) => updateAdminBatch(index, 'status', e.target.value)}
+                            className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-slate-200 text-[11px] focus:outline-none focus:border-cyan-400"
+                          >
+                            <option value="tersedia">TERSEDIA</option>
+                            <option value="tersedia_quota">TERSEDIA DENGAN KUOTA</option>
+                            <option value="penuh">PENUH</option>
+                          </select>
+                        </div>
+
+                        {/* Quota input (max 54 people) */}
+                        <div>
+                          <label className="text-[9px] text-slate-500 uppercase block mb-0.5">Kuota Orang (Maks 54)</label>
+                          <input 
+                            type="number"
+                            disabled={batch.status !== 'tersedia_quota'}
+                            value={batch.quota === null ? '' : batch.quota}
+                            onChange={(e) => updateAdminBatch(index, 'quota', e.target.value)}
+                            placeholder="Maks 54"
+                            min="0"
+                            max="54"
+                            className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded text-slate-200 text-[11px] focus:outline-none focus:border-cyan-400 disabled:opacity-30 disabled:bg-slate-950"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Save and Controls */}
+              <div className="flex gap-3 pt-3 border-t border-[#1e3d6b]">
+                <button
+                  onClick={() => {
+                    setIsUnlocked(false);
+                    setPasscode('');
+                    setAdminMessage({ type: '', text: '' });
+                  }}
+                  className="flex-1 py-2.5 bg-slate-850 hover:bg-slate-800 text-white rounded-xl text-xs font-bold border border-slate-700 transition-all font-orbitron cursor-pointer"
+                >
+                  LOGOUT
+                </button>
+                
+                <button
+                  onClick={handleSaveAdmin}
+                  disabled={isSaving}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold font-orbitron tracking-wider flex items-center justify-center gap-1.5 shadow-lg disabled:opacity-50 cursor-pointer"
+                >
+                  {isSaving ? (
+                    <RefreshCw size={14} className="animate-spin" />
+                  ) : (
+                    <Save size={14} />
+                  )}
+                  SIMPAN JADWAL
+                </button>
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      </div>
+    );
+  }
+
+  // --- RENDERING ROUTE: PUBLIC FLYER ---
+  return (
+    <div className="min-h-screen bg-[#040811] flex items-center justify-center p-0 md:p-6 select-none bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#0d213b] via-[#050c18] to-[#02040a]">
+      
+      {/* Background Grids for Desktop Decoration */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block">
+        <div className="absolute top-10 left-10 w-96 h-96 bg-blue-500/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-10 right-10 w-96 h-96 bg-cyan-500/5 rounded-full blur-[120px]" />
+      </div>
+
+      {/* 
+        Main Card Simulator with Locked Aspect Ratio matching the original poster (9:16).
+        This makes the flyer look EXACTLY like the image, with all dynamic elements layered precisely on top.
+      */}
+      <div className="relative w-full md:w-[450px] aspect-[9/16] bg-[url('/bg-flyer.jpg')] bg-cover bg-center overflow-hidden shadow-[0_0_50px_rgba(0,149,255,0.25)] border-0 md:border md:border-[#1a385f]/30 md:rounded-3xl">
+        
+        {/* --- DYNAMIC DATE OVERLAY --- */}
+        {/* Replaces the static 'Kamis, 11 Juni 2026' date exactly in its position */}
+        <div className="absolute top-[25.6%] left-0 w-full flex justify-center z-20">
+          <div className="relative bg-[#0d2138] px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/30 hover:border-[#00f0ff] rounded-full shadow-[0_0_15px_rgba(251,192,45,0.15)] flex items-center gap-2 cursor-pointer transition-all duration-200 hover:scale-102">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            <span className="font-sans font-black tracking-wider text-[#fbc02d] text-xs md:text-sm uppercase">
+              {formatDateIndonesian(selectedDate)}
+            </span>
+            <input 
+              type="date" 
+              value={selectedDate}
+              min={getTodayDateString()}
+              onChange={handleDatePickerChange}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full"
+            />
+          </div>
+        </div>
+
+        {/* --- DYNAMIC TABLE OVERLAY --- */}
+        {/* Placed precisely over the original table using flexbox divs for even spacing */}
+        <div className="absolute top-[32.5%] left-[8.67%] w-[81.22%] h-[34.12%] z-20 bg-[#0c1f3d] border border-white/20 rounded-lg overflow-hidden flex flex-col justify-start">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin mb-3" />
+              <p className="text-[10px] text-cyan-400 tracking-widest font-orbitron animate-pulse">LOADING...</p>
+            </div>
+          ) : errorMsg ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4 bg-red-950/10">
+              <AlertTriangle className="text-red-500 mb-1" size={24} />
+              <p className="text-[10px] font-bold text-red-200">{errorMsg}</p>
+            </div>
+          ) : batches.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center px-4">
+              <Clock className="text-slate-500 mb-2" size={24} />
+              <p className="text-[10px] font-bold text-slate-400">Jadwal belum diisi.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col h-full w-full">
+              {/* Header Row */}
+              <div className="flex w-full h-[16%] bg-[#10346b] border-b border-[#ffffff]/20">
+                <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
+                  Batch
+                </div>
+                <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
+                  Jam kunjungan
+                </div>
+                <div className="w-[40%] flex items-center justify-center text-[10px] md:text-xs font-black uppercase text-white font-orbitron tracking-wider">
+                  Status Booking
+                </div>
+              </div>
+              
+              {/* Batch Rows (Max 5 Batches) */}
+              <div className="flex flex-col h-[84%] w-full">
+                {batches.map((batch, index) => {
+                  let statusBgClass = 'bg-[#0bb75c]';
+                  let statusTextClass = 'text-white font-extrabold text-[9px] md:text-xs tracking-wider';
+
+                  if (batch.status === 'tersedia_quota') {
+                    statusBgClass = 'bg-[#f0a53b]';
+                  } else if (batch.status === 'penuh') {
+                    statusBgClass = 'bg-[#ef4444]';
+                  }
+
+                  return (
+                    <div 
+                      key={batch.id || index}
+                      className="flex w-full h-[20%] border-b border-[#ffffff]/20 last:border-b-0"
+                    >
+                      <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-white bg-[#0c1f3d]">
+                        {batch.batch}
+                      </div>
+                      <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-[#8db3e2] font-orbitron bg-[#0c1f3d]">
+                        {batch.time}
+                      </div>
+                      <div className={`w-[40%] flex items-center justify-center p-1 text-center ${statusBgClass}`}>
+                        <span className={statusTextClass}>
+                          {batch.statusLabel || (batch.status === 'penuh' ? 'PENUH' : 'TERSEDIA')}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* --- DYNAMIC WHATSAPP CALL-TO-ACTION OVERLAY --- */}
+        {/* Transparent Clickable Button directly over the static phone number text */}
+        <button
+          onClick={handleWhatsAppClick}
+          className="absolute top-[67.0%] left-[8.89%] w-[48%] h-[8.5%] z-20 cursor-pointer focus:outline-none rounded-lg hover:bg-white/5 transition-colors duration-250"
+          title="Hubungi WhatsApp Admin"
+        />
+
+        {/* --- SETTINGS/ADMIN ROUTE REDIRECT BUTTON --- */}
+        {/* Small transparent gear button at the top corner to open admin path */}
+        <div className="absolute top-[2%] right-[3%] z-30">
+          <button
+            onClick={() => navigateTo('/admin')}
+            className="p-1.5 bg-black/40 text-slate-400 hover:text-[#00f0ff] hover:bg-black/60 rounded-full border border-slate-700/35 transition-all cursor-pointer"
+            title="Go to Admin Panel"
+          >
+            <Settings size={14} />
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  );
+}
+
+export default App;
