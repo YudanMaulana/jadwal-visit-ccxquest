@@ -342,10 +342,19 @@ Jumlah Visitor: `;
       const schedule = allSchedules[dateStr];
       const hasVisitData = !!schedule;
       let isFull = false;
+      let isLimited = false;
       if (hasVisitData && schedule.batches) {
-        isFull = schedule.batches.every(b => 
+        isFull = schedule.batches.every(b =>
           b.status === 'penuh' || (b.status === 'tersedia_quota' && (parseInt(b.quota) || 0) >= 54)
         );
+        if (!isFull) {
+          const totalRemaining = schedule.batches.reduce((sum, b) => {
+            if (b.status === 'penuh') return sum;
+            if (b.status === 'tersedia_quota') return sum + Math.max(0, 54 - (parseInt(b.quota) || 0));
+            return sum + 54; // 'tersedia'
+          }, 0);
+          isLimited = totalRemaining < 100;
+        }
       }
 
       cells.push({
@@ -357,6 +366,7 @@ Jumlah Visitor: `;
         isToday,
         hasVisitData,
         isFull,
+        isLimited,
         isBlank: false
       });
     }
@@ -477,19 +487,23 @@ Jumlah Visitor: `;
                         title="Kunjungan Penuh"
                       />
                     );
-                    if (!cell.isSelected) {
-                      btnClass += " text-red-200/80 hover:text-red-100";
-                    }
+                    if (!cell.isSelected) btnClass += " text-red-200/80 hover:text-red-100";
+                  } else if (cell.isLimited) {
+                    marker = (
+                      <span 
+                        className={`absolute bottom-1 w-1.5 h-1.5 rounded-full bg-yellow-400 ${cell.isSelected ? 'border border-white' : ''}`}
+                        title="Slot Terbatas"
+                      />
+                    );
+                    if (!cell.isSelected) btnClass += " text-yellow-200/85 hover:text-yellow-100";
                   } else {
                     marker = (
                       <span 
                         className={`absolute bottom-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ${cell.isSelected ? 'border border-white' : ''}`} 
-                        title="Ada Jadwal Visit"
+                        title="Slot Tersedia"
                       />
                     );
-                    if (!cell.isSelected) {
-                      btnClass += " text-emerald-200/85 hover:text-emerald-100";
-                    }
+                    if (!cell.isSelected) btnClass += " text-emerald-200/85 hover:text-emerald-100";
                   }
                 }
               }
@@ -517,6 +531,10 @@ Jumlah Visitor: `;
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Slot Tersedia</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-yellow-400" />
+              <span>Slot Terbatas</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -767,17 +785,17 @@ Jumlah Visitor: `;
         
         {/* --- DYNAMIC DATE OVERLAY --- */}
         {/* Positioned between X-Quest logo and the title at ~27% */}
-        <div className="absolute top-[27%] left-0 w-full flex justify-center z-20">
+        <div className="absolute top-[26%] left-0 w-full flex justify-center z-20">
           <button 
             onClick={openCalendar}
-            className="relative bg-[#0d2138]/95 px-6 md:px-8 py-1.5 md:py-2 text-center border border-[#fbc02d]/35 hover:border-[#00f0ff] rounded-full shadow-[0_0_18px_rgba(0,240,255,0.15)] flex items-center gap-3 cursor-pointer transition-all duration-200 hover:scale-102 focus:outline-none"
+            className="relative bg-[#0d2138]/95 px-8 md:px-10 py-2.5 md:py-3 text-center border border-[#fbc02d]/35 hover:border-[#00f0ff] rounded-full shadow-[0_0_18px_rgba(0,240,255,0.15)] flex items-center gap-3 cursor-pointer transition-all duration-200 hover:scale-102 focus:outline-none"
           >
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
+            <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping flex-shrink-0" />
             <div className="flex flex-col items-center">
-              <span className="font-sans font-black tracking-wider text-[#fbc02d] text-[11px] md:text-xs uppercase leading-tight">
+              <span className="font-sans font-black tracking-wider text-[#fbc02d] text-[13px] md:text-sm uppercase leading-tight">
                 {formatDateIndonesian(selectedDate)}
               </span>
-              <span className="text-[8px] text-[#00f0ff] font-bold font-orbitron tracking-widest uppercase mt-0.5 animate-pulse leading-none">
+              <span className="text-[9px] md:text-[10px] text-[#00f0ff] font-bold font-orbitron tracking-widest uppercase mt-0.5 animate-pulse leading-none">
                 KLIK UNTUK PILIH TANGGAL
               </span>
             </div>
@@ -850,15 +868,10 @@ Jumlah Visitor: `;
                       <div className="w-[30%] border-r border-[#ffffff]/20 flex items-center justify-center text-[10px] md:text-xs font-bold text-white bg-[#0c1f3d]">
                         {batch.time}
                       </div>
-                      <div className={`w-[40%] flex flex-col items-center justify-center p-1 text-center ${statusBgClass}`}>
+                      <div className={`w-[40%] flex items-center justify-center p-1 text-center ${statusBgClass}`}>
                         <span className={statusTextClass}>
                           {displayLabel}
                         </span>
-                        {batch.status === 'tersedia' && (
-                          <span className="text-white/80 font-bold text-[7px] md:text-[8px] tracking-wide leading-tight mt-0.5">
-                            maks 54 orang
-                          </span>
-                        )}
                       </div>
                     </div>
                   );
