@@ -883,7 +883,7 @@ Jumlah Visitor: `;
 
         {/* --- WHATSAPP CALL-TO-ACTION BUTTON --- */}
         {/* Aligned with "Catatan:" text: top=65%, left=5%, width=50% */}
-        <div className="absolute top-[67%] left-[3%] w-[50%] z-20">
+        <div className="absolute top-[67%] left-[2%] w-[61%] z-20">
           <button
             onClick={handleWhatsAppClick}
             className="w-full py-1 flex items-center justify-center gap-1.5 rounded-lg cursor-pointer focus:outline-none transition-all duration-200 hover:scale-102 active:scale-98"
@@ -899,7 +899,7 @@ Jumlah Visitor: `;
               <path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.558 4.121 1.535 5.849L.057 23.625a.75.75 0 0 0 .92.92l5.776-1.478A11.944 11.944 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75a9.718 9.718 0 0 1-4.953-1.352l-.355-.211-3.68.941.957-3.594-.232-.37A9.718 9.718 0 0 1 2.25 12C2.25 6.615 6.615 2.25 12 2.25S21.75 6.615 21.75 12 17.385 21.75 12 21.75z"/>
             </svg>
             <span className="text-white font-black text-[9px] font-orbitron tracking-wider uppercase">
-              Booking via WhatsApp
+              KLIK UNTUK BOOKING VIA WHATSAPP
             </span>
           </button>
         </div>
